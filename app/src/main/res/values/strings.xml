@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WebRTC SDK Demo</string>
+    <string name="connect">连接房间</string>
+    <string name="disconnect">断开连接</string>
+    <string name="mute_self">本地静音</string>
+    <string name="unmute_self">取消本地静音</string>
+    <string name="status_disconnected">状态：未连接</string>
+    <string name="status_connecting">状态：连接中...</string>
+    <string name="status_connected">状态：已连接</string>
+    <string name="status_error">状态：错误</string>
+    <string name="label_backend_url">BE 地址</string>
+    <string name="label_room_id">房间 ID</string>
+    <string name="label_user_name">昵称</string>
+    <string name="label_user_role">入房角色</string>
+    <string name="label_auth_token">业务登录令牌</string>
+    <string name="hint_backend_url">请输入 BE 地址</string>
+    <string name="hint_room_id">例如：demo-room</string>
+    <string name="hint_user_name">例如：Alice</string>
+    <string name="hint_auth_token">粘贴用户 JWT（可带或不带 Bearer 前缀）</string>
+    <string name="hint_target_identity">输入目标 identity</string>
+    <string name="default_backend_url">http://192.168.3.140:3003</string>
+    <string name="default_room_id">demo-room</string>
+    <string name="default_user_name">DemoUser</string>
+    <string name="role_host">主持人</string>
+    <string name="role_member">发言成员</string>
+    <string name="role_listener">听众成员</string>
+    <string name="refresh_participants">刷新参与者</string>
+    <string name="kick_target">踢出目标</string>
+    <string name="mute_target">静音目标</string>
+    <string name="unmute_target">取消静音目标</string>
+    <string name="participants_title">参与者列表（可区分主持人与成员）</string>
+    <string name="toast_participant_joined">%s 加入房间</string>
+    <string name="toast_participant_left">%s 离开房间</string>
+    <string name="toast_error">错误：%s</string>
+    <string name="toast_connect_failed">连接失败：%s</string>
+    <string name="set_target_host">设为主持人</string>
+    <string name="set_target_speaker">设为发言成员</string>
+    <string name="set_target_listener">设为听众成员</string>
+    <string name="toast_invalid_url">BE 地址不合法</string>
+    <string name="toast_required_target">请先输入目标 identity</string>
+    <string name="toast_required_auth_token">请先填写业务登录令牌</string>
+    <string name="toast_mic_permission_required">请先授予麦克风权限</string>
+</resources>
