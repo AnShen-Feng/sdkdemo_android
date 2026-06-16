@@ -15,9 +15,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.partnerclient.sdkcore.rtc.AuthHeaderProvider
 import com.partnerclient.sdkcore.rtc.ConnectParams
 import com.partnerclient.sdkcore.rtc.EndpointUrl
+import com.partnerclient.sdkcore.rtc.MediaCredentialsProvider
 import com.partnerclient.sdkcore.rtc.RtcClient
 import com.partnerclient.sdkcore.rtc.RtcConfig
 import com.partnerclient.sdkcore.rtc.RtcEvent
@@ -29,6 +29,9 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private var client: RtcClient? = null
+    private var backend: DemoRtcBackend? = null
+    private var backendToken: String? = null
+    private var activeRoomId: String? = null
 
     private lateinit var statusText: TextView
     private lateinit var connectButton: Button
@@ -123,12 +126,9 @@ class MainActivity : AppCompatActivity() {
             logE("BE 地址不合法", it)
             return null
         }
-        val authProvider = AuthHeaderProvider {
-            val raw = authTokenInput.text.toString().trim()
-            if (raw.isBlank()) null else if (raw.startsWith("Bearer ")) raw else "Bearer $raw"
-        }
+        backend = DemoRtcBackend(endpoint)
         client?.close()
-        client = RtcClient.create(this, RtcConfig(backendBaseUrl = endpoint), authProvider)
+        client = RtcClient.create(this, RtcConfig())
         return client
     }
 
@@ -209,10 +209,11 @@ class MainActivity : AppCompatActivity() {
     private fun connect() {
         if (authTokenInput.text.toString().trim().isBlank()) {
             toast(getString(R.string.toast_required_auth_token))
-            logE("缺少业务登录令牌，/webrtc/token 将返回 401")
+            logE("缺少 WebRTC 访问令牌，网关请求将返回 401")
             return
         }
         val activeClient = recreateClientFromInput() ?: return
+        val activeBackend = backend ?: return
         observeRtcEvents()
         val roomId = roomIdInput.text.toString().trim().ifBlank { getString(R.string.default_room_id) }
         val userName = userNameInput.text.toString().trim().ifBlank { "User-${System.currentTimeMillis() % 10000}" }
@@ -224,8 +225,23 @@ class MainActivity : AppCompatActivity() {
         localRoomRole = role
         lifecycleScope.launch {
             try {
-                logI("开始连接 roomId=$roomId, user=$userName, role=$role")
-                activeClient.connect(ConnectParams(roomId = roomId, displayName = userName, role = role))
+                val accessToken = accessTokenValue()
+                logI("宿主自行发起 join HTTP 请求 roomId=$roomId, user=$userName, role=$role")
+                backendToken = accessToken
+                activeRoomId = roomId
+                val params = ConnectParams(roomId = roomId, displayName = userName, role = role)
+                activeClient.connect(
+                    params = params,
+                    credentialsProvider = MediaCredentialsProvider { requestParams ->
+                        activeBackend.joinRoom(
+                            accessToken = accessToken,
+                            roomId = requestParams.roomId,
+                            displayName = requestParams.displayName,
+                            role = requestParams.role,
+                            ttlSeconds = DEFAULT_TTL_SECONDS,
+                        )
+                    },
+                )
                 isMicMuted = false
                 if (role != RoomRole.HOST) {
                     currentHostIdentity = null
@@ -244,6 +260,8 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             logI("主动断开连接")
             activeClient.disconnect()
+            backendToken = null
+            activeRoomId = null
             isMicMuted = false
             currentHostIdentity = null
             participantsAdapter.setHostIdentity(null)
@@ -269,45 +287,53 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 调用 SDK 的命令接口：刷新参与者列表。 */
+    /** 调用业务后端命令接口：刷新参与者列表。 */
     private fun refreshParticipants() {
-        val activeClient = client ?: return
+        val activeBackend = backend ?: return
+        val token = backendToken ?: return
+        val roomId = activeRoomId ?: return
         lifecycleScope.launch {
-            runCatching { activeClient.listParticipants() }
-                .onSuccess { list ->
-                    logI("命令成功: listParticipants size=${list.size}")
-                    participantsAdapter.submitList(list)
+            runCatching { activeBackend.listParticipants(token, roomId) }
+                .onSuccess { result ->
+                    logI("命令成功: listParticipants size=${result.participants.size}")
+                    participantsAdapter.submitList(result.participants)
                     participantsAdapter.setHostIdentity(currentHostIdentity)
                 }
                 .onFailure { logE("命令失败: listParticipants", it) }
         }
     }
 
-    /** 调用 SDK 的命令接口：踢出目标参与者。 */
+    /** 调用业务后端命令接口：踢出目标参与者。 */
     private fun kickParticipant(identity: String) {
-        val activeClient = client ?: return
+        val activeBackend = backend ?: return
+        val token = backendToken ?: return
+        val roomId = activeRoomId ?: return
         lifecycleScope.launch {
-            runCatching { activeClient.kickParticipant(identity) }
+            runCatching { activeBackend.kickParticipant(token, roomId, identity) }
                 .onSuccess { logI("命令成功: kick identity=$identity") }
                 .onFailure { logE("命令失败: kick identity=$identity", it) }
         }
     }
 
-    /** 调用 SDK 的命令接口：静音/取消静音目标参与者。 */
+    /** 调用业务后端命令接口：静音/取消静音目标参与者。 */
     private fun muteParticipant(identity: String, muted: Boolean) {
-        val activeClient = client ?: return
+        val activeBackend = backend ?: return
+        val token = backendToken ?: return
+        val roomId = activeRoomId ?: return
         lifecycleScope.launch {
-            runCatching { activeClient.muteParticipant(identity, muted) }
+            runCatching { activeBackend.muteParticipant(token, roomId, identity, muted) }
                 .onSuccess { logI("命令成功: mute identity=$identity muted=$muted") }
                 .onFailure { logE("命令失败: mute identity=$identity muted=$muted", it) }
         }
     }
 
-    /** 调用 SDK 的命令接口：设置目标角色并同步本地主持人标识。 */
+    /** 调用业务后端命令接口：设置目标角色并同步本地主持人标识。 */
     private fun setRole(identity: String, role: RoomRole) {
-        val activeClient = client ?: return
+        val activeBackend = backend ?: return
+        val token = backendToken ?: return
+        val roomId = activeRoomId ?: return
         lifecycleScope.launch {
-            runCatching { activeClient.setParticipantRole(identity, role) }
+            runCatching { activeBackend.setParticipantRole(token, roomId, identity, role) }
                 .onSuccess {
                     logI("命令成功: setRole identity=$identity role=$role")
                     if (role == RoomRole.HOST) {
@@ -331,6 +357,10 @@ class MainActivity : AppCompatActivity() {
         block(target)
     }
 
+    private fun accessTokenValue(): String {
+        return authTokenInput.text.toString().trim()
+    }
+
     private fun toast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
@@ -349,6 +379,13 @@ class MainActivity : AppCompatActivity() {
         eventsJob?.cancel()
         client?.close()
         client = null
+        backend = null
+        backendToken = null
+        activeRoomId = null
         super.onDestroy()
+    }
+
+    private companion object {
+        const val DEFAULT_TTL_SECONDS = 3600
     }
 }
